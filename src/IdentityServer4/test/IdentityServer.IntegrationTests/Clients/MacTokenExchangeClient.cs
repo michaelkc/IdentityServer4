@@ -136,15 +136,16 @@ namespace IdentityServer.IntegrationTests.Clients
                     response.TokenType,
                     response.AccessToken,
                     response.ExpiresIn,
-                    SubjectClaims = GetPayload(response)
+                    SubjectClaims = response.IsError ? new Dictionary<string, object>() : GetPayload(response)
                 }, Formatting.Indented));
 
             response.IsError.Should().Be(false);
-            // Processing might take a minute worst case, so we allow a bit of slack
-            var exchangedTokenExpires = DateTime.UtcNow.AddSeconds(response.ExpiresIn);
-            var difference = exchangedTokenExpires - subjectTokenExpireTime;
-            //difference.TotalSeconds.Should().BeInRange(0, 60, "because processing might have taken a bit of time");
-            response.ExpiresIn.Should().Be(3600);
+            ((double)response.ExpiresIn)
+                .Should()
+                .BeInRange(
+                    TimeSpan.FromMinutes(44).TotalSeconds, 
+                    TimeSpan.FromMinutes(45).TotalSeconds, 
+                    "because processing time will have passed since calculating it");
             response.TokenType.Should().Be("Bearer");
             response.IdentityToken.Should().BeNull();
             response.RefreshToken.Should().BeNull();

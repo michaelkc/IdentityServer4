@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Security.Claims;
 using IdentityServer4.Validation;
 
@@ -16,5 +17,6 @@ namespace Seges.IdentityServer4.TokenExchange
         public Claim[] ActorClaims { get; set; } = new Claim[0];
         public string Sub { get; set; }
         public string Amr { get; set; }
+        public TimeSpan SubjectTokenRemainingLifetime { get; set; }
     }
 }

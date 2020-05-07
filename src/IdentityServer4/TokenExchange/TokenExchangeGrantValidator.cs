@@ -8,6 +8,7 @@ using IdentityModel;
 using IdentityServer4;
 using IdentityServer4.Models;
 using IdentityServer4.Validation;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 
 namespace Seges.IdentityServer4.TokenExchange
@@ -31,13 +32,15 @@ namespace Seges.IdentityServer4.TokenExchange
     {
         private readonly TypedTokenValidator _typedTokenValidator;
         private readonly ScopeValidator _scopeValidator;
+        private readonly ISystemClock _clock;
         private readonly ITokenValidator _validator;
         private readonly ILogger<TokenExchangeGrantValidator> _logger;
 
-        public TokenExchangeGrantValidator(TypedTokenValidator typedTokenValidator, ScopeValidator scopeValidator, ILogger<TokenExchangeGrantValidator> logger)
+        public TokenExchangeGrantValidator(TypedTokenValidator typedTokenValidator, ScopeValidator scopeValidator, ISystemClock clock, ILogger<TokenExchangeGrantValidator> logger)
         {
             _typedTokenValidator = typedTokenValidator;
             _scopeValidator = scopeValidator;
+            _clock = clock;
             _logger = logger;
         }
 
@@ -58,9 +61,8 @@ namespace Seges.IdentityServer4.TokenExchange
                     validationResult.Error,
                     validationResult.ErrorDescription);
             }
-            var response = await GenerateResponseAsync(validationResult);
+            var response = await GenerateResponseAsync(validationResult, context.Request);
             context.Result = response;
-
         }
 
         private async Task<TokenExchangeRequestValidationResult> ValidateTokenExchangeRequestAsync(ExtensionGrantValidationContext context)
@@ -145,6 +147,16 @@ namespace Seges.IdentityServer4.TokenExchange
             }
             validatedRequest.Amr = amrs.Single();
 
+            
+            var exp = subjectClaims
+                    .Where(c => c.Type == JwtClaimTypes.Expiration)
+                    .Select(c => DateTimeOffset.FromUnixTimeSeconds(long.Parse(c.Value)))
+                    .Single();
+
+            // TODO: Consider capping "too long" lifetimes, e.g. more than 1 hour
+            // We cannot set expires explicitly (otherwise just set new exp claim to subject token exp), only lifetime
+            validatedRequest.SubjectTokenRemainingLifetime = exp - _clock.UtcNow;
+
             // TODO Additional ClaimSet validation 
             validatedRequest.SubjectClaims = subjectClaims;
 
@@ -194,22 +206,29 @@ namespace Seges.IdentityServer4.TokenExchange
             return;
         }
 
-        private async Task<GrantValidationResult> GenerateResponseAsync(TokenExchangeRequestValidationResult tokenExchangeRequestValidationResult)
+        private async Task<GrantValidationResult> GenerateResponseAsync(
+            TokenExchangeRequestValidationResult tokenExchangeRequestValidationResult,
+            ValidatedTokenRequest validateTokenRequest)
         {
-            var validatedRequest = tokenExchangeRequestValidationResult.ValidatedTokenExchangeRequest;
+            var validatedTokenExchangeRequest = tokenExchangeRequestValidationResult.ValidatedTokenExchangeRequest;
 
-            if (!TokenTypes.SupportsOutputType(validatedRequest.RequestedTokenType))
+            if (!TokenTypes.SupportsOutputType(validatedTokenExchangeRequest.RequestedTokenType))
             {
                 return new GrantValidationResult(TokenRequestErrors.InvalidRequest, "requested_token_type is unsupported");
             }
 
             
-            var subjectClaims = validatedRequest.SubjectClaims;
+            var subjectClaims = validatedTokenExchangeRequest.SubjectClaims;
 
             // Construct a fresh claimsprincipal
             var userAuthenticationType = "maybepasswordfindvalueinclaimset";
             var userIdentity = new ClaimsIdentity(subjectClaims, userAuthenticationType);
-            return new GrantValidationResult(validatedRequest.Sub, validatedRequest.Amr );
+
+            // Poke contexts ValidateRequest to control various output parameters
+            validateTokenRequest.AccessTokenLifetime =
+                Convert.ToInt32(validatedTokenExchangeRequest.SubjectTokenRemainingLifetime.TotalSeconds);
+
+            return new GrantValidationResult(validatedTokenExchangeRequest.Sub, validatedTokenExchangeRequest.Amr);
         }
 
         public string GrantType => OidcConstants.GrantTypes.TokenExchange;
