@@ -41,6 +41,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\IdentityServer4.csproj" />
+    <ProjectReference Include="..\..\TokenExchange\TokenExchange.csproj" />
   </ItemGroup>
 
 </Project>

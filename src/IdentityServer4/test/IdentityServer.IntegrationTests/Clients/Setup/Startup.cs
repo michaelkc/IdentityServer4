@@ -2,10 +2,12 @@
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
 
 
+using IdentityModel;
 using IdentityServer4.Configuration;
 using IdentityServer4.Validation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Seges.IdentityServer4.TokenExchange;
 
 namespace IdentityServer.IntegrationTests.Clients.Setup
 {
@@ -20,7 +22,6 @@ namespace IdentityServer.IntegrationTests.Clients.Setup
             var builder = services.AddIdentityServer(options =>
             {
                 options.IssuerUri = "https://idsvr4";
-
                 options.Events = new EventsOptions
                 {
                     RaiseErrorEvents = true,
@@ -36,6 +37,11 @@ namespace IdentityServer.IntegrationTests.Clients.Setup
             builder.AddTestUsers(Users.Get());
 
             builder.AddDeveloperSigningCredential(persistKey: false);
+
+            builder.AddExtensionGrantValidator<TokenExchangeGrantValidator>();
+            builder.Services.AddTransient<TypedTokenValidator>();
+            builder.Services.AddTransient<SamlTokenValidator>();
+
 
             builder.AddExtensionGrantValidator<ExtensionGrantValidator>();
             builder.AddExtensionGrantValidator<ExtensionGrantValidator2>();

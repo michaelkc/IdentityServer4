@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
+using IdentityModel;
 using IdentityServer.IntegrationTests.Common;
 using IdentityServer4;
 using IdentityServer4.Models;
@@ -249,6 +250,26 @@ namespace IdentityServer.IntegrationTests.Clients.Setup
                     AllowedGrantTypes = GrantTypes.ImplicitAndClientCredentials,
                     AllowedScopes = {"api1"},
                     RedirectUris = { "http://implicit_and_client_creds" }
+                },
+
+                // Token Exchange
+                new Client
+                {
+                    ClientId = "tokenexchange",
+                    ClientSecrets =
+                    {
+                        new Secret("secret".Sha256())
+                    },
+
+                    AllowedGrantTypes = new List<string> {OidcConstants.GrantTypes.TokenExchange},
+
+                    AllowOfflineAccess = false,
+                    AllowedScopes =
+                    {
+                        "api1", "api2"
+                    },
+
+                    AccessTokenType = AccessTokenType.Jwt
                 }
             };
         }

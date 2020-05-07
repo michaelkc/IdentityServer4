@@ -13,5 +13,7 @@
     <PackageReference Include="System.Security.Principal.Windows" Version="4.7.0" />
 
     <ProjectReference Include="..\src\IdentityServer4.csproj" />
+
+    <ProjectReference Include="..\TokenExchange\TokenExchange.csproj" />
   </ItemGroup>
 </Project>
