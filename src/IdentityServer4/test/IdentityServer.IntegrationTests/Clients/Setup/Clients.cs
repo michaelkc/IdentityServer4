@@ -266,7 +266,7 @@ namespace IdentityServer.IntegrationTests.Clients.Setup
                     AllowOfflineAccess = false,
                     AllowedScopes =
                     {
-                        "api1", "api2"
+                        "api", "other_api"
                     },
 
                     AccessTokenType = AccessTokenType.Jwt

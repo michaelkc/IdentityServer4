@@ -30,12 +30,14 @@ namespace Seges.IdentityServer4.TokenExchange
     public class TokenExchangeGrantValidator : IExtensionGrantValidator
     {
         private readonly TypedTokenValidator _typedTokenValidator;
+        private readonly ScopeValidator _scopeValidator;
         private readonly ITokenValidator _validator;
         private readonly ILogger<TokenExchangeGrantValidator> _logger;
 
-        public TokenExchangeGrantValidator(TypedTokenValidator typedTokenValidator, ILogger<TokenExchangeGrantValidator> logger)
+        public TokenExchangeGrantValidator(TypedTokenValidator typedTokenValidator, ScopeValidator scopeValidator, ILogger<TokenExchangeGrantValidator> logger)
         {
             _typedTokenValidator = typedTokenValidator;
+            _scopeValidator = scopeValidator;
             _logger = logger;
         }
 
@@ -59,14 +61,6 @@ namespace Seges.IdentityServer4.TokenExchange
             var response = await GenerateResponseAsync(validationResult);
             context.Result = response;
 
-        }
-
-        private async Task AuthorizeRequestAsync(TokenExchangeRequestValidationResult validatedRequest)
-        {
-            //TODO: Authorize that current (client,subjecttoken,actortoken,resource) combo is authorized
-
-            //TODO: Implement authorization
-            return;
         }
 
         private async Task<TokenExchangeRequestValidationResult> ValidateTokenExchangeRequestAsync(ExtensionGrantValidationContext context)
@@ -128,55 +122,94 @@ namespace Seges.IdentityServer4.TokenExchange
 
             var subjectClaims = subjectTokenResult.Claims.ToArray();
 
-            if (subjectClaims.All(c => c.Type != "sub"))
+            validatedRequest.Sub = subjectClaims.SingleOrDefault(c => c.Type == JwtClaimTypes.Subject)?.Value;
+
+            if (string.IsNullOrWhiteSpace(validatedRequest.Sub))
             {
                 return new TokenExchangeRequestValidationResult(
-                    validatedRequest, 
-                    TokenRequestErrors.InvalidRequest, 
+                    validatedRequest,
+                    TokenRequestErrors.InvalidRequest,
                     "error",
-                    "Subject is missing sub claim");
+                    "Subject has missing/empty sub claim");
             }
+
+            var amrs = subjectClaims.Where(c => c.Type == JwtClaimTypes.AuthenticationMethod).Select(c => c.Value).ToArray();
+            // IdentityServers GrantValidationResult support at most a single amr claim
+            if (amrs.Length != 1)
+            {
+                return new TokenExchangeRequestValidationResult(
+                    validatedRequest,
+                    TokenRequestErrors.InvalidRequest,
+                    "error",
+                    "Subject token has no or more than one (unsupported) amr claim");
+            }
+            validatedRequest.Amr = amrs.Single();
+
+            // TODO Additional ClaimSet validation 
             validatedRequest.SubjectClaims = subjectClaims;
-            var result = subjectTokenResult;
 
             if (delegationRequested)
             {
                 if (actorTokenResult.IsError)
                 {
-                    // Info-Log?
                     return new TokenExchangeRequestValidationResult(
                         validatedRequest,
                         TokenRequestErrors.InvalidRequest,
                         "figure-out-use-of-error-here",
                         TokenRequestErrorDescriptions.UnsupportedActorTokenType);
                 }
+                // TODO Additional ClaimSet validation 
                 validatedRequest.ActorClaims = actorTokenResult.Claims.ToArray();
             }
 
             
 
-            // TODO Verify claimset of subjectTokenResult and actorTokenResult is useable?
 
             return new TokenExchangeRequestValidationResult(validatedRequest);
 
         }
 
-        private async Task<GrantValidationResult> GenerateResponseAsync(TokenExchangeRequestValidationResult validatedRequest)
+        private async Task AuthorizeRequestAsync(TokenExchangeRequestValidationResult tokenExchangeRequestValidationResult)
         {
-            if (!TokenTypes.SupportsOutputType(validatedRequest.ValidatedTokenExchangeRequest.RequestedTokenType))
+            var validatedRequest = tokenExchangeRequestValidationResult.ValidatedTokenExchangeRequest;
+            //var requestedScopes = validatedRequest.Scopes
+            //    .ToArray();
+            //var subjectScopes = validatedRequest.SubjectClaims
+            //    .Where(c => c.Type == JwtClaimTypes.Scope)
+            //    .Select(c => c.Value)
+            //    .ToArray();
+            //var policyScopes = new[] { "other_api" };
+            //_scopeValidator.SetConsentedScopes(subjectScopes.Union(policyScopes));
+
+            var validatedScopes = validatedRequest.ValidatedScopes;
+            //_scopeValidator.SetConsentedScopes();
+            //var allowedScopes = subjectScopes.Union(policyScopes).ToArray();
+            
+            //if (allowedScopes)
+            //TODO: Authorize that current (client,subjecttoken,actortoken,resource) combo is authorized
+            
+            //TODO: Implement authorization
+            // TODO: Determine which identity scopes, if any, should be included in the response via incoming token, scope and stored policy
+
+            return;
+        }
+
+        private async Task<GrantValidationResult> GenerateResponseAsync(TokenExchangeRequestValidationResult tokenExchangeRequestValidationResult)
+        {
+            var validatedRequest = tokenExchangeRequestValidationResult.ValidatedTokenExchangeRequest;
+
+            if (!TokenTypes.SupportsOutputType(validatedRequest.RequestedTokenType))
             {
                 return new GrantValidationResult(TokenRequestErrors.InvalidRequest, "requested_token_type is unsupported");
             }
 
-            // get user's identity
-            var validatedTokenExchangeRequest = validatedRequest.ValidatedTokenExchangeRequest;
-            var subjectClaims = validatedTokenExchangeRequest.SubjectClaims;
-            var sub = subjectClaims.FirstOrDefault(c => c.Type == "sub").Value;
+            
+            var subjectClaims = validatedRequest.SubjectClaims;
 
             // Construct a fresh claimsprincipal
             var userAuthenticationType = "maybepasswordfindvalueinclaimset";
             var userIdentity = new ClaimsIdentity(subjectClaims, userAuthenticationType);
-            return new GrantValidationResult(sub, GrantType);
+            return new GrantValidationResult(validatedRequest.Sub, validatedRequest.Amr );
         }
 
         public string GrantType => OidcConstants.GrantTypes.TokenExchange;

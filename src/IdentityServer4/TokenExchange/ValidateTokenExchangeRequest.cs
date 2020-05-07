@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿using System.Collections.Generic;
+using System.Security.Claims;
 using IdentityServer4.Validation;
 
 namespace Seges.IdentityServer4.TokenExchange
@@ -13,5 +14,7 @@ namespace Seges.IdentityServer4.TokenExchange
         public string Audience { get; set; }
         public string Resource { get; set; }
         public Claim[] ActorClaims { get; set; } = new Claim[0];
+        public string Sub { get; set; }
+        public string Amr { get; set; }
     }
 }

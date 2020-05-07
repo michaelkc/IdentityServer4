@@ -49,7 +49,7 @@ namespace IdentityServer.IntegrationTests.Clients
             _testServerCredentialStore = (ISigningCredentialStore)server.Services.GetService(typeof(ISigningCredentialStore));
         }
 
-        string CreateRequestJwt(string issuer, string audience, SigningCredentials credential, Claim[] claims)
+        (JwtSecurityToken Token, string Jwt) CreateToken(string issuer, string audience, SigningCredentials credential, Claim[] claims, DateTime? issuedAt = null, DateTime? notBefore = null, DateTime? expires = null)
         {
             var handler = new JwtSecurityTokenHandler();
             handler.OutboundClaimTypeMap.Clear();
@@ -58,89 +58,106 @@ namespace IdentityServer.IntegrationTests.Clients
                 issuer: issuer,
                 audience: audience,
                 signingCredentials: credential,
-                subject: Identity.Create("pwd", claims));
+                subject: Identity.Create("pwd", claims),
+                notBefore: notBefore,
+                expires: expires,
+                issuedAt: issuedAt);
 
             token.Header[JwtHeaderParameterNames.Typ] = "at+jwt";
-
-            return handler.WriteToken(token);
+            return (token, handler.WriteToken(token));
         }
 
 
 
 
         [Fact]
-        public async Task Request_with_no_explicit_scopes_should_return_expected_payload()
+        public async Task Should_Restrict_TokenExchange_Token_Lifetime_To_SubjectToken_Lifetime()
         {
             var testServerSigningCredentials = await _testServerCredentialStore.GetSigningCredentialsAsync();
+            const string clientId = "tokenexchange";
+            const string clientSecret = "secret";
+            const string sourceScope = "api";
+            const string targetScope = "other_api";
+            const string aliceSub = "818727";
+            const string issuer = "https://idsvr4";
+            // Bootstrap token simulated to have been issued 15 minutes ago
+            var currentTime = DateTime.UtcNow;
+            var subjectTokenIssueTime = currentTime.AddMinutes(-15);
+            var subjectTokenExpireTime = subjectTokenIssueTime.AddHours(1);
 
-
-            var clientId = "tokenexchange";
-            var clientSecret = "secret";
-            var sourceScope = "api1";
-            var targetScope = "api2";
-            var aliceSub = "818727";
-            var requestJwt = CreateRequestJwt(
-                issuer: "https://idsvr4",
+            var subjectToken = CreateToken(
+                issuer: issuer,
                 audience: sourceScope,
                 credential: testServerSigningCredentials,
                 claims: new[] {
                     new Claim("client_id", clientId),
                     new Claim("scope", sourceScope),
-                    new Claim("sub", aliceSub), 
+                    new Claim("sub", aliceSub),
                     new Claim("amr", "pwd"),
-                });
-
-
-
+                },
+                issuedAt: subjectTokenIssueTime,
+                notBefore: subjectTokenIssueTime,
+                expires: subjectTokenExpireTime
+                );
 
             var request = new TokenExchangeTokenRequest
             {
-                Address = TokenEndpoint, 
-                ClientId = clientId, 
+                Address = TokenEndpoint,
+                ClientId = clientId,
                 ClientSecret = clientSecret,
-                RequestedTokenType = "urn:ietf:params:oauth:token-type:jwt"
+                RequestedTokenType = "urn:ietf:params:oauth:token-type:jwt",
+                SubjectToken = subjectToken.Jwt,
+                Scope = targetScope,
+                SubjectTokenType = "urn:ietf:params:oauth:token-type:jwt"
             };
-            request.SubjectToken = requestJwt;
-            request.SubjectTokenType = "urn:ietf:params:oauth:token-type:jwt";
-            var response = await _client.RequestTokenExchangeTokenAsync(request);
-            //var response = await _client.RequestClientCredentialsTokenAsync();
+            _testOutputHelper.WriteLine("Request:");
+            _testOutputHelper.WriteLine(JsonConvert.SerializeObject(new
+            {
+                request.GrantType,
+                request.ClientId,
+                request.ClientSecret,
+                request.Audience,
+                request.Resource,
+                request.ActorTokenType,
+                request.ActorToken,
+                request.SubjectTokenType,
+                request.SubjectToken,
+                SubjectClaims = subjectToken.Token.Claims.ToDictionary(c => c.Type, c => c.Value)
 
-            _testOutputHelper.WriteLine("Raw output:");
-            _testOutputHelper.WriteLine(response.AccessToken ?? "");
-            _testOutputHelper.WriteLine(response.RefreshToken ?? "");
-            _testOutputHelper.WriteLine(response.IdentityToken ?? "");
-            _testOutputHelper.WriteLine(response.TokenType ?? "");
-            _testOutputHelper.WriteLine(response.ErrorDescription ?? "");
-            _testOutputHelper.WriteLine(response.Error ?? "");
-            //_testOutputHelper.WriteLine(response.HttpErrorReason ?? "");
-            _testOutputHelper.WriteLine(response.Raw ?? "");
+            }, Formatting.Indented));
+
+            var response = await _client.RequestTokenExchangeTokenAsync(request);
+            _testOutputHelper.WriteLine("Response:");
+            _testOutputHelper.WriteLine(JsonConvert.SerializeObject(
+                new
+                {
+                    response.Error,
+                    response.ErrorDescription,
+                    response.TokenType,
+                    response.AccessToken,
+                    response.ExpiresIn,
+                    SubjectClaims = GetPayload(response)
+                }, Formatting.Indented));
 
             response.IsError.Should().Be(false);
+            // Processing might take a minute worst case, so we allow a bit of slack
+            var exchangedTokenExpires = DateTime.UtcNow.AddSeconds(response.ExpiresIn);
+            var difference = exchangedTokenExpires - subjectTokenExpireTime;
+            //difference.TotalSeconds.Should().BeInRange(0, 60, "because processing might have taken a bit of time");
             response.ExpiresIn.Should().Be(3600);
             response.TokenType.Should().Be("Bearer");
             response.IdentityToken.Should().BeNull();
             response.RefreshToken.Should().BeNull();
 
             var payload = GetPayload(response);
-            _testOutputHelper.WriteLine("Decoded token payload:");
-            foreach (var entry in payload)
-            {
-                _testOutputHelper.WriteLine("-->{0} = {1}", entry.Key, entry.Value);
-            }
-            payload.Count().Should().Be(6);
-            payload.Should().Contain("iss", "https://idsvr4");
-            payload.Should().Contain("client_id", "client");
+            payload.Should().Contain(JwtClaimTypes.Issuer, issuer);
+            payload.Should().Contain(JwtClaimTypes.ClientId, clientId);
 
-            var audiences = ((JArray)payload["aud"]).Select(x => x.ToString());
-            audiences.Count().Should().Be(2);
-            audiences.Should().Contain("api");
-            audiences.Should().Contain("other_api");
+            payload.Should().Contain(JwtClaimTypes.Audience, targetScope);
 
-            var scopes = ((JArray)payload["scope"]).Select(x => x.ToString());
-            scopes.Count().Should().Be(3);
-            scopes.Should().Contain("api1");
-            scopes.Should().Contain("api2");
-            scopes.Should().Contain("other_api");
+            var scopes = ((JArray)payload[JwtClaimTypes.Scope]).Select(x => x.ToString());
+            scopes.Count().Should().Be(1);
+            scopes.Should().Contain(targetScope);
         }
 
 
@@ -184,9 +201,34 @@ namespace IdentityServer.IntegrationTests.Clients
                 request.Parameters.AddRequired(OidcConstants.TokenRequest.SubjectTokenType, request.SubjectTokenType);
             }
 
+            if (!request.Parameters.ContainsKey(OidcConstants.TokenRequest.ActorToken))
+            {
+                request.Parameters.AddOptional(OidcConstants.TokenRequest.ActorToken, request.ActorToken);
+            }
+
+            if (!request.Parameters.ContainsKey(OidcConstants.TokenRequest.ActorToken))
+            {
+                request.Parameters.AddOptional(OidcConstants.TokenRequest.ActorToken, request.ActorToken);
+            }
+
             if (!request.Parameters.ContainsKey(OidcConstants.TokenRequest.RequestedTokenType))
             {
-                request.Parameters.AddRequired(OidcConstants.TokenRequest.RequestedTokenType, request.RequestedTokenType);
+                request.Parameters.AddOptional(OidcConstants.TokenRequest.RequestedTokenType, request.RequestedTokenType);
+            }
+
+            if (!request.Parameters.ContainsKey(OidcConstants.TokenRequest.Scope))
+            {
+                request.Parameters.AddOptional(OidcConstants.TokenRequest.Scope, request.Scope);
+            }
+
+            if (!request.Parameters.ContainsKey(OidcConstants.TokenRequest.Resource))
+            {
+                request.Parameters.AddOptional(OidcConstants.TokenRequest.Resource, request.Resource);
+            }
+
+            if (!request.Parameters.ContainsKey(OidcConstants.TokenRequest.Audience))
+            {
+                request.Parameters.AddOptional(OidcConstants.TokenRequest.Audience, request.Audience);
             }
 
             return await client.RequestTokenAsync(request, cancellationToken).ConfigureAwait(false);
@@ -207,6 +249,7 @@ namespace IdentityServer.IntegrationTests.Clients
         public string SubjectTokenType { get; set; }
         public string ActorToken { get; set; }
         public string ActorTokenType { get; set; }
+        public string Scope { get; set; }
     }
 
     internal static class DictionaryExtensions
