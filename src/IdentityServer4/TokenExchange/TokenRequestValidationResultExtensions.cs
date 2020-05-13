@@ -2,10 +2,9 @@
 using IdentityServer4.Models;
 using IdentityServer4.Validation;
 
-namespace Seges.IdentityServer4.TokenExchange
+namespace TokenExchange
 {
-    
-    public class TokenExchangeRequestValidationResult : TokenRequestValidationResult
+    internal class TokenExchangeRequestValidationResult : TokenRequestValidationResult
     {
         public TokenRequestErrors TokenRequestError { get; }
 

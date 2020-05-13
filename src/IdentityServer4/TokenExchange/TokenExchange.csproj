@@ -1,9 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <AssemblyName>Seges.IdentityServer4.TokenExchange</AssemblyName>
-    <RootNamespace>Seges.IdentityServer4.TokenExchange</RootNamespace>
+    <AssemblyName>TokenExchange</AssemblyName>
+    <RootNamespace>TokenExchange</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

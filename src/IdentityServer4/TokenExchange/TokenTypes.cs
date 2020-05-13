@@ -1,8 +1,8 @@
 ﻿using System.Linq;
 
-namespace Seges.IdentityServer4.TokenExchange
+namespace TokenExchange
 {
-    public class TokenTypes
+    internal class TokenTypes
     {
 
         public const string AccessToken = "urn:ietf:params:oauth:token-type:access_token";

@@ -1,8 +1,7 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using IdentityServer4.Validation;
 
-namespace Seges.IdentityServer4.TokenExchange
+namespace TokenExchange.Validators
 {
     public class TypedTokenValidator
     {

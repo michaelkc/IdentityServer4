@@ -1,17 +1,15 @@
 ﻿using System;
-using System.Collections.Specialized;
 using System.Linq;
-using System.Reflection.Metadata.Ecma335;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using IdentityModel;
-using IdentityServer4;
 using IdentityServer4.Models;
 using IdentityServer4.Validation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
+using TokenExchange.Validators;
 
-namespace Seges.IdentityServer4.TokenExchange
+namespace TokenExchange
 {
     /*
      * Additional constraints:
@@ -19,14 +17,6 @@ namespace Seges.IdentityServer4.TokenExchange
      * - we never extend token lifetime, the lifetime of the resulting token is set to the shortest lifetime of (subject_token, actor_token)
      * - as IdSrv does not currently support resource indicators, we do not use them (or audience), we use scopes
      */
-
-    public class TokenRequestErrorDescriptions
-    {
-        public const string InvalidActorToken = "InvalidActorToken";
-        public const string UnsupportedSubjectTokenType = "Unsupported subject token type";
-        public const string UnsupportedActorTokenType = "Unsupported actor token type";
-        public const string InvalidSubjectToken = "InvalidSubjectToken";
-    }
 
     public class TokenExchangeGrantValidator : IExtensionGrantValidator
     {
@@ -42,6 +32,7 @@ namespace Seges.IdentityServer4.TokenExchange
             _scopeValidator = scopeValidator;
             _clock = clock;
             _logger = logger;
+            // TODO: Evaluate plugging in a ICustomTokenRequestValidator
         }
 
 

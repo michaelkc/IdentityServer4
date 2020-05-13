@@ -1,11 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Security.Claims;
 using IdentityServer4.Validation;
 
-namespace Seges.IdentityServer4.TokenExchange
+namespace TokenExchange
 {
-    public class ValidateTokenExchangeRequest : ValidatedTokenRequest
+    internal class ValidateTokenExchangeRequest : ValidatedTokenRequest
     {
         public Claim[] SubjectClaims { get; set; } = new Claim[0];
         public bool IsImpersonation { get; set; }
