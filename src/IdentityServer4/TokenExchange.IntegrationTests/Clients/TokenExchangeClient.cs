@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Claims;
@@ -11,6 +13,7 @@ using IdentityModel.Client;
 using IdentityServer4.Stores;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using TokenExchange.IntegrationTests.Clients.Setup;
@@ -28,6 +31,7 @@ namespace TokenExchange.IntegrationTests.Clients
 
         private readonly HttpClient _client;
         private readonly ISigningCredentialStore _testServerCredentialStore;
+        private readonly JwtTokenGenerator _testServerTokenGenerator;
 
         public TokenExchangeClient(ITestOutputHelper testOutputHelper)
         {
@@ -38,6 +42,7 @@ namespace TokenExchange.IntegrationTests.Clients
 
             _client = server.CreateClient();
             _testServerCredentialStore = (ISigningCredentialStore)server.Services.GetService(typeof(ISigningCredentialStore));
+            _testServerTokenGenerator = new JwtTokenGenerator(_testServerCredentialStore);
         }
 
         [Fact]
@@ -55,20 +60,25 @@ namespace TokenExchange.IntegrationTests.Clients
             var subjectTokenIssueTime = currentTime.AddMinutes(-15);
             var subjectTokenExpireTime = subjectTokenIssueTime.AddHours(1);
 
-            var subjectToken = JwtTokenGenerator.CreateToken(
-                issuer: issuer,
-                audience: sourceScope,
-                credential: testServerSigningCredentials,
-                claims: new[] {
-                    new Claim("client_id", clientId),
-                    new Claim("scope", sourceScope),
-                    new Claim("sub", aliceSub),
-                    new Claim("amr", "pwd"),
-                },
-                issuedAt: subjectTokenIssueTime,
-                notBefore: subjectTokenIssueTime,
-                expires: subjectTokenExpireTime
-                );
+            var claimSet =
+                new ClaimSet
+                {
+                    {JwtClaimTypes.Audience,sourceScope},
+                    {JwtClaimTypes.ClientId,clientId},
+                    {JwtClaimTypes.Scope,sourceScope},
+                    {JwtClaimTypes.Subject,aliceSub},
+                    {JwtClaimTypes.IssuedAt,EpochTime.GetIntDate(subjectTokenIssueTime).ToString()},
+                    {JwtClaimTypes.NotBefore,EpochTime.GetIntDate(subjectTokenIssueTime).ToString()},
+                    {JwtClaimTypes.Expiration,EpochTime.GetIntDate(subjectTokenExpireTime).ToString()},
+                    {JwtClaimTypes.AuthenticationMethod,"pwd"},
+                    {JwtHeaderParameterNames.Typ,"at+jwt"},
+                    {JwtClaimTypes.Issuer,issuer}
+                };
+            var subjectToken = await _testServerTokenGenerator.Create(new[]
+            {
+                claimSet
+            });
+            
 
             var request = new TokenExchangeTokenRequest
             {
@@ -92,7 +102,7 @@ namespace TokenExchange.IntegrationTests.Clients
                 request.ActorToken,
                 request.SubjectTokenType,
                 request.SubjectToken,
-                SubjectClaims = subjectToken.Token.Claims.ToDictionary(c => c.Type, c => c.Value)
+                SubjectClaims = ClaimSet.FromClaims(subjectToken.Typed.Claims)
 
             }, Formatting.Indented));
 
